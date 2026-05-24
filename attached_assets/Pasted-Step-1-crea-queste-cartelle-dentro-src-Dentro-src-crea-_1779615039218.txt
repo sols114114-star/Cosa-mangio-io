@@ -1,0 +1,134 @@
+Step 1 — crea queste cartelle dentro src
+Dentro src crea:
+Plain text
+data
+utils
+components
+pages
+Alla fine deve essere:
+Plain text
+src/
+  App.jsx
+  main.jsx
+  style.css
+  data/
+  utils/
+  components/
+  pages/
+Step 2 — prima sposta SOLO dati alimenti
+Crea file:
+Plain text
+src/data/foods.js
+Dentro metti da App.jsx queste parti:
+JavaScript
+const extraPublicFoods = [...]
+const publicFoods = [...]
+publicFoods.push(...extraPublicFoods);
+
+const defaultFoods = [...]
+e alla fine del file aggiungi:
+JavaScript
+export { publicFoods, defaultFoods };
+Poi in App.jsx cancelli quelle parti e in alto aggiungi:
+JavaScript
+import { publicFoods, defaultFoods } from './data/foods';
+Step 3 — crea file impostazioni
+Crea:
+Plain text
+src/data/constants.js
+Sposta dentro:
+JavaScript
+const STORAGE_KEY = ...
+const mealTypes = ...
+const defaultMealTargets = ...
+const defaultDailyTargets = ...
+const defaultMacroPercents = ...
+const carbSpeedOptions = ...
+const sourceMeta = ...
+Alla fine:
+JavaScript
+export {
+  STORAGE_KEY,
+  mealTypes,
+  defaultMealTargets,
+  defaultDailyTargets,
+  defaultMacroPercents,
+  carbSpeedOptions,
+  sourceMeta,
+};
+In App.jsx metti:
+JavaScript
+import {
+  STORAGE_KEY,
+  mealTypes,
+  defaultMealTargets,
+  defaultDailyTargets,
+  defaultMacroPercents,
+  carbSpeedOptions,
+  sourceMeta,
+} from './data/constants';
+Step 4 — sposta funzioni utili
+Crea:
+Plain text
+src/utils/helpers.js
+Sposta dentro:
+JavaScript
+dateKeyLocal
+monthKeyLocal
+todayKey
+round1
+uid
+calcEntry
+carbSpeedMeta
+foodSourceMeta
+scaleRecipeIngredients
+getWeekRange
+portionLevel
+Alla fine esporta:
+JavaScript
+export {
+  dateKeyLocal,
+  monthKeyLocal,
+  todayKey,
+  round1,
+  uid,
+  calcEntry,
+  carbSpeedMeta,
+  foodSourceMeta,
+  scaleRecipeIngredients,
+  getWeekRange,
+  portionLevel,
+};
+Però carbSpeedMeta e foodSourceMeta usano carbSpeedOptions e sourceMeta, quindi dentro helpers.js devi mettere in alto:
+JavaScript
+import { carbSpeedOptions, sourceMeta } from '../data/constants';
+In App.jsx importi:
+JavaScript
+import {
+  dateKeyLocal,
+  monthKeyLocal,
+  todayKey,
+  round1,
+  uid,
+  calcEntry,
+  carbSpeedMeta,
+  foodSourceMeta,
+  scaleRecipeIngredients,
+  getWeekRange,
+  portionLevel,
+} from './utils/helpers';
+Step 5 — solo dopo fai pagine
+Quando questi 3 step funzionano, allora crei pagine:
+Plain text
+src/pages/HomePage.jsx
+src/pages/DayPage.jsx
+src/pages/FoodsPage.jsx
+src/pages/RecipesPage.jsx
+src/pages/TargetsPage.jsx
+Ma questo lo fai dopo, perché prima dobbiamo alleggerire App.jsx.
+Ordine giusto
+Fai solo:
+Plain text
+1. data/foods.js
+2. data/constants.js
+3. utils/helpers.js

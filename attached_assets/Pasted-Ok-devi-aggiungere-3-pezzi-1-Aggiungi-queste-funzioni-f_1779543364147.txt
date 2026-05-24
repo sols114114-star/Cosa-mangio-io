@@ -1,0 +1,80 @@
+Ok, devi aggiungere 3 pezzi.
+
+1) Aggiungi queste funzioni fuori dal componente
+
+Metti prima di:
+
+export default function MacroFoodCalendarApp() {
+function getWeekRange(dateKey) {
+  const date = new Date(`${dateKey}T12:00:00`);
+  const day = date.getDay(); // 0 domenica, 1 lunedì...
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+
+  const monday = new Date(date);
+  monday.setDate(date.getDate() + diffToMonday);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  return {
+    start: dateKeyLocal(monday),
+    end: dateKeyLocal(sunday),
+  };
+}
+
+function getUsageColor(count) {
+  if (count >= 11) return 'bg-red-200';
+  if (count >= 8) return 'bg-orange-200';
+  if (count >= 5) return 'bg-green-200';
+  return 'bg-white';
+}
+2) Dentro il componente aggiungi questo useMemo
+
+Mettilo dopo:
+
+const filteredPublicFoods = publicFoods.filter((f) => f.name.toLowerCase().includes(publicSearch.toLowerCase()));
+const weeklyFoodUsage = useMemo(() => {
+  const { start, end } = getWeekRange(selectedDate);
+  const counts = {};
+
+  Object.entries(days).forEach(([date, entries]) => {
+    if (date < start || date > end) return;
+
+    entries.forEach((entry) => {
+      counts[entry.foodId] = (counts[entry.foodId] || 0) + 1;
+    });
+  });
+
+  return counts;
+}, [days, selectedDate]);
+3) Cambia gli <option> della selezione alimento
+
+Trova questo pezzo:
+
+{foods.map((f) => <option key={f.id} value={f.id}>{foodSourceMeta(f).icon} {carbSpeedMeta(f.carbSpeed).icon} {f.name}{f.isRecipe ? ' (ricetta)' : ''}</option>)}
+
+Sostituiscilo con:
+
+{foods.map((f) => {
+  const count = weeklyFoodUsage[f.id] || 0;
+  const mark =
+    count >= 11 ? '🔴' :
+    count >= 8 ? '🟠' :
+    count >= 5 ? '🟢' :
+    '⚪';
+
+  return (
+    <option key={f.id} value={f.id}>
+      {mark} {foodSourceMeta(f).icon} {carbSpeedMeta(f.carbSpeed).icon} {f.name}{count > 0 ? ` (${count}x)` : ''}{f.isRecipe ? ' (ricetta)' : ''}
+    </option>
+  );
+})}
+
+Così:
+
+conta solo da lunedì a domenica della settimana selezionata
+settimana dopo riparte da zero
+1–4 = ⚪
+5–7 = 🟢
+8–10 = 🟠
+11+ = 🔴

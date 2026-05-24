@@ -1,0 +1,228 @@
+1) Nel form alimento aggiungi portionSize
+
+Trova:
+
+const [foodForm, setFoodForm] = useState({ name: '', carbs: '', protein: '', fat: '', kcal: '', carbSpeed: 'medium' });
+
+Sostituisci con:
+
+const [foodForm, setFoodForm] = useState({
+  name: '',
+  carbs: '',
+  protein: '',
+  fat: '',
+  kcal: '',
+  carbSpeed: 'medium',
+  portionSize: '',
+});
+2) In saveFood() aggiungi portionSize
+
+Dentro const data = { ... } aggiungi:
+
+portionSize: Number(foodForm.portionSize) || 100,
+
+E dove resetti il form sostituisci con:
+
+setFoodForm({
+  name: '',
+  carbs: '',
+  protein: '',
+  fat: '',
+  kcal: '',
+  carbSpeed: 'medium',
+  portionSize: '',
+});
+3) In editFood(food) aggiungi porzione
+
+Sostituisci setFoodForm(...) con:
+
+setFoodForm({
+  name: food.name,
+  carbs: food.carbs,
+  protein: food.protein,
+  fat: food.fat,
+  kcal: food.kcal,
+  carbSpeed: food.carbSpeed || 'medium',
+  portionSize: food.portionSize || 100,
+});
+4) Nel form visivo aggiungi campo porzione
+
+Dopo il campo Kcal /100g aggiungi:
+
+<label className="text-sm font-semibold">
+  Porzione normale (g)
+  <input
+    className="mt-1 w-full rounded-xl border p-2 font-normal"
+    type="number"
+    placeholder="es. pasta 80g, pane 50g"
+    value={foodForm.portionSize}
+    onChange={(e) => setFoodForm({ ...foodForm, portionSize: e.target.value })}
+  />
+</label>
+5) Aggiungi queste funzioni prima di export default
+function getWeekRange(dateKey) {
+  const date = new Date(`${dateKey}T12:00:00`);
+  const day = date.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+
+  const monday = new Date(date);
+  monday.setDate(date.getDate() + diffToMonday);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  return {
+    start: dateKeyLocal(monday),
+    end: dateKeyLocal(sunday),
+  };
+}
+
+function portionLevel(portions) {
+  if (portions >= 10) return { label: 'rosso', bg: 'bg-red-200', text: 'text-red-800', color: '#fecaca' };
+  if (portions >= 7) return { label: 'arancio', bg: 'bg-orange-200', text: 'text-orange-800', color: '#fed7aa' };
+  if (portions >= 4) return { label: 'verde', bg: 'bg-green-200', text: 'text-green-800', color: '#bbf7d0' };
+  return { label: 'bianco', bg: 'bg-white', text: 'text-slate-700', color: '#ffffff' };
+}
+6) Dentro componente aggiungi calcolo settimanale
+
+Dopo:
+
+const filteredPublicFoods = ...
+
+aggiungi:
+
+const weeklyIngredientUsage = useMemo(() => {
+  const { start, end } = getWeekRange(selectedDate);
+  const gramsByFood = {};
+
+  Object.entries(days).forEach(([date, entries]) => {
+    if (date < start || date > end) return;
+
+    entries.forEach((entry) => {
+      const food = foods.find((f) => f.id === entry.foodId);
+      if (!food) return;
+
+      if (food.isRecipe && Array.isArray(food.ingredients)) {
+        const factor = (Number(entry.grams) || 0) / (food.recipeTotalWeight || 100);
+
+        food.ingredients.forEach((ing) => {
+          gramsByFood[ing.foodId] = (gramsByFood[ing.foodId] || 0) + ing.grams * factor;
+        });
+      } else {
+        gramsByFood[food.id] = (gramsByFood[food.id] || 0) + (Number(entry.grams) || 0);
+      }
+    });
+  });
+
+  const result = {};
+
+  foods.forEach((food) => {
+    const grams = gramsByFood[food.id] || 0;
+    const portionSize = Number(food.portionSize) || 100;
+    const portions = grams / portionSize;
+
+    result[food.id] = {
+      grams: round1(grams),
+      portions: round1(portions),
+      level: portionLevel(portions),
+    };
+  });
+
+  return result;
+}, [days, foods, selectedDate]);
+7) Nella scheda alimento mostra porzioni settimana
+
+Dove mostri il nome alimento, aggiungi sotto:
+
+{weeklyIngredientUsage[food.id] && (
+  <div className={`mt-2 inline-block rounded-full px-2 py-1 text-[11px] ${weeklyIngredientUsage[food.id].level.bg} ${weeklyIngredientUsage[food.id].level.text}`}>
+    Settimana: {weeklyIngredientUsage[food.id].grams}g · {weeklyIngredientUsage[food.id].portions} porz.
+  </div>
+)}
+8) Nel select alimento mostra colore/porzioni
+
+Sostituisci option con:
+
+{foods.map((f) => {
+  const usage = weeklyIngredientUsage[f.id];
+  const portions = usage?.portions || 0;
+
+  const mark =
+    portions >= 10 ? '🔴' :
+    portions >= 7 ? '🟠' :
+    portions >= 4 ? '🟢' :
+    '⚪';
+
+  return (
+    <option key={f.id} value={f.id}>
+      {mark} {foodSourceMeta(f).icon} {carbSpeedMeta(f.carbSpeed).icon} {f.name}
+      {portions > 0 ? ` (${portions} porz.)` : ''}
+      {f.isRecipe ? ' (ricetta)' : ''}
+    </option>
+  );
+})}
+9) Per ricette: pallina intelligente
+
+Aggiungi prima di return ( dentro componente:
+
+function recipeCircleStyle(recipe) {
+  if (!recipe?.isRecipe || !Array.isArray(recipe.ingredients)) return null;
+
+  const totalRecipeWeight = recipe.recipeTotalWeight || recipe.ingredients.reduce((s, i) => s + i.grams, 0) || 1;
+
+  const parts = {
+    red: 0,
+    orange: 0,
+    green: 0,
+    white: 0,
+  };
+
+  recipe.ingredients.forEach((ing) => {
+    const share = ing.grams / totalRecipeWeight;
+    const usage = weeklyIngredientUsage[ing.foodId];
+    const level = usage?.level?.label || 'bianco';
+
+    if (level === 'rosso') parts.red += share;
+    else if (level === 'arancio') parts.orange += share;
+    else if (level === 'verde') parts.green += share;
+    else parts.white += share;
+  });
+
+  const red = Math.round(parts.red * 100);
+  const orange = Math.round(parts.orange * 100);
+  const green = Math.round(parts.green * 100);
+  const white = Math.max(0, 100 - red - orange - green);
+
+  let start = 0;
+  const segs = [];
+
+  if (red) {
+    segs.push(`#fecaca ${start}% ${start + red}%`);
+    start += red;
+  }
+  if (orange) {
+    segs.push(`#fed7aa ${start}% ${start + orange}%`);
+    start += orange;
+  }
+  if (green) {
+    segs.push(`#bbf7d0 ${start}% ${start + green}%`);
+    start += green;
+  }
+  if (white) {
+    segs.push(`#ffffff ${start}% 100%`);
+  }
+
+  return {
+    background: `conic-gradient(${segs.join(', ')})`,
+  };
+}
+
+Poi vicino al nome ricetta aggiungi:
+
+{food.isRecipe && (
+  <span
+    className="ml-2 inline-block h-5 w-5 rounded-full border border-slate-400 align-middle"
+    style={recipeCircleStyle(food)}
+    title="Stato ingredienti ricetta nella settimana"
+  />
+)}

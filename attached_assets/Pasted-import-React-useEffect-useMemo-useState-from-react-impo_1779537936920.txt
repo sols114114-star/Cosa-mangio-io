@@ -1,0 +1,813 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+
+const STORAGE_KEY = 'macro-food-calendar-v2';
+
+const mealTypes = ['Colazione', 'Merenda mattina', 'Pranzo', 'Merenda pomeriggio', 'Cena', 'Merenda bonus'];
+
+const defaultMealTargets = {
+  'Colazione': 0,
+  'Merenda mattina': 0,
+  'Pranzo': 0,
+  'Merenda pomeriggio': 0,
+  'Cena': 0,
+  'Merenda bonus': 0,
+};
+
+const defaultDailyTargets = {
+  carbs: 0,
+  protein: 0,
+  fat: 0,
+  kcal: 0,
+};
+
+const defaultMacroPercents = {
+  carbs: 50,
+  protein: 20,
+  fat: 30,
+};
+
+const carbSpeedOptions = [
+  { value: 'slow', label: 'Lento', icon: '↘', color: 'text-green-600' },
+  { value: 'medium', label: 'Medio', icon: '↘↘', color: 'text-orange-500' },
+  { value: 'fast', label: 'Veloce', icon: '↘↘↘', color: 'text-red-600' },
+];
+
+const defaultFoods = [
+  { id: 1, name: 'Riso', carbs: 78, protein: 7, fat: 1, kcal: 349, carbSpeed: 'fast' },
+  { id: 2, name: 'Pasta', carbs: 75, protein: 13, fat: 2, kcal: 370, carbSpeed: 'medium' },
+  { id: 3, name: 'Pane', carbs: 50, protein: 8, fat: 3, kcal: 259, carbSpeed: 'fast' },
+  { id: 4, name: 'Patate', carbs: 17, protein: 2, fat: 0.1, kcal: 77, carbSpeed: 'medium' },
+  { id: 5, name: 'Banana', carbs: 23, protein: 1.1, fat: 0.3, kcal: 89, carbSpeed: 'fast' },
+];
+
+const todayKey = () => new Date().toISOString().slice(0, 10);
+const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+const uid = () => Date.now() + Math.floor(Math.random() * 10000);
+
+function calcEntry(food, grams) {
+  const g = Number(grams) || 0;
+  if (!food) return { carbs: 0, protein: 0, fat: 0, kcal: 0 };
+  return {
+    carbs: round1((food.carbs * g) / 100),
+    protein: round1((food.protein * g) / 100),
+    fat: round1((food.fat * g) / 100),
+    kcal: round1((food.kcal * g) / 100),
+  };
+}
+
+function carbSpeedMeta(speed) {
+  return carbSpeedOptions.find((x) => x.value === speed) || carbSpeedOptions[1];
+}
+
+function scaleRecipeIngredients(food, grams) {
+  if (!food?.isRecipe || !Array.isArray(food.ingredients)) return [];
+  const factor = (Number(grams) || 0) / (food.recipeTotalWeight || 100);
+  return food.ingredients.map((ing) => ({ ...ing, scaledGrams: round1(ing.grams * factor) }));
+}
+
+export default function MacroFoodCalendarApp() {
+  const [foods, setFoods] = useState(defaultFoods);
+  const [days, setDays] = useState({});
+  const [selectedDate, setSelectedDate] = useState(todayKey());
+  const [calendarMonth, setCalendarMonth] = useState(todayKey().slice(0, 7));
+  const [search, setSearch] = useState('');
+  const [selectedFoodId, setSelectedFoodId] = useState(1);
+  const [addGrams, setAddGrams] = useState('100');
+  const [addCarbs, setAddCarbs] = useState('');
+  const [editingFoodId, setEditingFoodId] = useState(null);
+  const [swapEntry, setSwapEntry] = useState(null);
+  const [selectedMeal, setSelectedMeal] = useState('Colazione');
+  const [mealTargets, setMealTargets] = useState(defaultMealTargets);
+  const [dailyTargets, setDailyTargets] = useState(defaultDailyTargets);
+  const [dailyTargetAuto, setDailyTargetAuto] = useState(true);
+  const [macroPercents, setMacroPercents] = useState(defaultMacroPercents);
+  const [showMealTargets, setShowMealTargets] = useState(false);
+  const [foodForm, setFoodForm] = useState({ name: '', carbs: '', protein: '', fat: '', kcal: '', carbSpeed: 'medium' });
+  const [showRecipeCreator, setShowRecipeCreator] = useState(false);
+  const [editingRecipeId, setEditingRecipeId] = useState(null);
+  const [recipeName, setRecipeName] = useState('');
+  const [recipeSpeed, setRecipeSpeed] = useState('medium');
+  const [recipeRows, setRecipeRows] = useState([{ id: uid(), foodId: 1, grams: '' }]);
+  const [recipeViewEntry, setRecipeViewEntry] = useState(null);
+
+  useEffect(() => {
+    document.title = '🍝 Cosa mangio';
+    let icon = document.querySelector("link[rel~='icon']");
+    if (!icon) {
+      icon = document.createElement('link');
+      icon.rel = 'icon';
+      document.head.appendChild(icon);
+    }
+    icon.href = "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍝</text></svg>";
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (saved?.foods) setFoods(saved.foods);
+      if (saved?.days) setDays(saved.days);
+      if (saved?.selectedDate) setSelectedDate(saved.selectedDate);
+      if (saved?.calendarMonth) setCalendarMonth(saved.calendarMonth);
+      if (saved?.mealTargets) setMealTargets({ ...defaultMealTargets, ...saved.mealTargets });
+      if (saved?.dailyTargets) setDailyTargets({ ...defaultDailyTargets, ...saved.dailyTargets });
+      if (typeof saved?.dailyTargetAuto === 'boolean') setDailyTargetAuto(saved.dailyTargetAuto);
+      if (saved?.macroPercents) setMacroPercents({ ...defaultMacroPercents, ...saved.macroPercents });
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ foods, days, selectedDate, calendarMonth, mealTargets, dailyTargets, dailyTargetAuto, macroPercents }));
+  }, [foods, days, selectedDate, calendarMonth, mealTargets, dailyTargets, dailyTargetAuto, macroPercents]);
+
+  const selectedFood = foods.find((f) => f.id === Number(selectedFoodId));
+  const entries = days[selectedDate] || [];
+  const filteredFoods = foods.filter((f) => f.name.toLowerCase().includes(search.toLowerCase()));
+
+  const monthDays = useMemo(() => {
+    const [year, month] = calendarMonth.split('-').map(Number);
+    const y = year;
+    const m = month - 1;
+    const first = new Date(y, m, 1);
+    const last = new Date(y, m + 1, 0);
+    const startOffset = (first.getDay() + 6) % 7;
+    const arr = [];
+    for (let i = 0; i < startOffset; i++) arr.push(null);
+    for (let d = 1; d <= last.getDate(); d++) {
+      const key = new Date(y, m, d).toISOString().slice(0, 10);
+      arr.push({ day: d, key });
+    }
+    return arr;
+  }, [calendarMonth]);
+
+  const totals = useMemo(() => {
+    return entries.reduce(
+      (acc, entry) => {
+        const food = foods.find((f) => f.id === entry.foodId);
+        const m = calcEntry(food, entry.grams);
+        acc.carbs += m.carbs;
+        acc.protein += m.protein;
+        acc.fat += m.fat;
+        acc.kcal += m.kcal;
+        return acc;
+      },
+      { carbs: 0, protein: 0, fat: 0, kcal: 0 }
+    );
+  }, [entries, foods]);
+
+  const total = {
+    carbs: round1(totals.carbs),
+    protein: round1(totals.protein),
+    fat: round1(totals.fat),
+    kcal: round1(totals.kcal),
+  };
+
+  const macroCalories = {
+    carbs: total.carbs * 4,
+    protein: total.protein * 4,
+    fat: total.fat * 9,
+  };
+
+  const macroTotalCalories = macroCalories.carbs + macroCalories.protein + macroCalories.fat;
+
+  const macroPerc = {
+    carbs: macroTotalCalories ? Math.round((macroCalories.carbs * 100) / macroTotalCalories) : 0,
+    protein: macroTotalCalories ? Math.round((macroCalories.protein * 100) / macroTotalCalories) : 0,
+    fat: macroTotalCalories ? Math.round((macroCalories.fat * 100) / macroTotalCalories) : 0,
+  };
+
+  const pieData = [
+    { name: 'Carboidrati', value: macroPerc.carbs, color: '#22c55e' },
+    { name: 'Proteine', value: macroPerc.protein, color: '#3b82f6' },
+    { name: 'Grassi', value: macroPerc.fat, color: '#f97316' },
+  ].filter((item) => item.value > 0);
+
+  const autoCarbsTarget = round1(mealTypes.reduce((sum, meal) => sum + (Number(mealTargets[meal]) || 0), 0));
+  const autoCaloriesTarget = macroPercents.carbs > 0 ? round1((autoCarbsTarget * 4 * 100) / macroPercents.carbs) : 0;
+
+  const effectiveDailyTargets = dailyTargetAuto
+    ? {
+        carbs: autoCarbsTarget,
+        protein: round1((autoCaloriesTarget * (Number(macroPercents.protein) || 0)) / 100 / 4),
+        fat: round1((autoCaloriesTarget * (Number(macroPercents.fat) || 0)) / 100 / 9),
+        kcal: autoCaloriesTarget,
+      }
+    : dailyTargets;
+
+  function targetInfo(current, target) {
+    const t = Number(target) || 0;
+    const c = Number(current) || 0;
+    if (!t) return { text: 'Obiettivo non impostato', percent: 0, done: false };
+    const diff = round1(t - c);
+    return {
+      text: diff >= 0 ? `Mancano ${diff}` : `Superato di ${Math.abs(diff)}`,
+      percent: Math.min(100, Math.round((c * 100) / t)),
+      done: c >= t,
+    };
+  }
+
+  function moveMonth(delta) {
+    const [year, month] = calendarMonth.split('-').map(Number);
+    const next = new Date(year, month - 1 + delta, 1);
+    const nextYear = next.getFullYear();
+    const nextMonth = String(next.getMonth() + 1).padStart(2, '0');
+    setCalendarMonth(`${nextYear}-${nextMonth}`);
+  }
+
+  function goToday() {
+    const today = todayKey();
+    setSelectedDate(today);
+    setCalendarMonth(today.slice(0, 7));
+  }
+
+  function saveFood() {
+    if (!foodForm.name.trim()) return;
+
+    const data = {
+      name: foodForm.name.trim(),
+      carbs: Number(foodForm.carbs) || 0,
+      protein: Number(foodForm.protein) || 0,
+      fat: Number(foodForm.fat) || 0,
+      carbSpeed: foodForm.carbSpeed || 'medium',
+      kcal:
+        Number(foodForm.kcal) ||
+        round1((Number(foodForm.carbs) || 0) * 4 + (Number(foodForm.protein) || 0) * 4 + (Number(foodForm.fat) || 0) * 9),
+    };
+
+    if (editingFoodId) {
+      setFoods((prev) => prev.map((f) => (f.id === editingFoodId ? { ...f, ...data } : f)));
+      setEditingFoodId(null);
+    } else {
+      const newFood = { id: uid(), ...data };
+      setFoods((prev) => [...prev, newFood]);
+      setSelectedFoodId(newFood.id);
+    }
+
+    setFoodForm({ name: '', carbs: '', protein: '', fat: '', kcal: '', carbSpeed: 'medium' });
+  }
+
+  function editFood(food) {
+    setEditingFoodId(food.id);
+    setFoodForm({ name: food.name, carbs: food.carbs, protein: food.protein, fat: food.fat, kcal: food.kcal, carbSpeed: food.carbSpeed || 'medium' });
+  }
+
+  function openRecipeEditor(recipe) {
+    setEditingRecipeId(recipe.id);
+    setRecipeName(recipe.name);
+    setRecipeSpeed(recipe.carbSpeed || 'medium');
+    setRecipeRows((recipe.ingredients || []).map((ing) => ({ id: uid(), foodId: ing.foodId, grams: ing.grams })));
+    setShowRecipeCreator(true);
+  }
+
+  function createRecipe() {
+    if (!recipeName.trim()) return;
+    const validRows = recipeRows
+      .map((row) => ({ ...row, food: foods.find((f) => f.id === Number(row.foodId)), grams: Number(row.grams) || 0 }))
+      .filter((row) => row.food && row.grams > 0);
+
+    const totalWeight = validRows.reduce((sum, row) => sum + row.grams, 0);
+    if (totalWeight <= 0) return;
+
+    const totalsRecipe = validRows.reduce(
+      (acc, row) => {
+        const m = calcEntry(row.food, row.grams);
+        acc.carbs += m.carbs;
+        acc.protein += m.protein;
+        acc.fat += m.fat;
+        acc.kcal += m.kcal;
+        return acc;
+      },
+      { carbs: 0, protein: 0, fat: 0, kcal: 0 }
+    );
+
+    const newRecipe = {
+      id: editingRecipeId || uid(),
+      name: recipeName.trim(),
+      carbs: round1((totalsRecipe.carbs * 100) / totalWeight),
+      protein: round1((totalsRecipe.protein * 100) / totalWeight),
+      fat: round1((totalsRecipe.fat * 100) / totalWeight),
+      kcal: round1((totalsRecipe.kcal * 100) / totalWeight),
+      carbSpeed: recipeSpeed,
+      isRecipe: true,
+      recipeTotalWeight: round1(totalWeight),
+      ingredients: validRows.map((row) => ({ foodId: row.food.id, name: row.food.name, grams: row.grams })),
+    };
+
+    if (editingRecipeId) {
+      setFoods((prev) => prev.map((f) => (f.id === editingRecipeId ? newRecipe : f)));
+    } else {
+      setFoods((prev) => [...prev, newRecipe]);
+    }
+    setSelectedFoodId(newRecipe.id);
+    setEditingRecipeId(null);
+    setRecipeName('');
+    setRecipeSpeed('medium');
+    setRecipeRows([{ id: uid(), foodId: foods[0]?.id || 1, grams: '' }]);
+    setShowRecipeCreator(false);
+  }
+
+  function deleteFood(id) {
+    setFoods((prev) => prev.filter((f) => f.id !== id));
+    setDays((prev) => {
+      const copy = { ...prev };
+      Object.keys(copy).forEach((date) => {
+        copy[date] = copy[date].filter((e) => e.foodId !== id);
+      });
+      return copy;
+    });
+  }
+
+  function addEntry() {
+    if (!selectedFood) return;
+
+    let grams = Number(addGrams) || 0;
+    const targetCarbs = Number(addCarbs) || 0;
+
+    if (targetCarbs > 0 && selectedFood.carbs > 0) {
+      grams = (targetCarbs / selectedFood.carbs) * 100;
+    }
+
+    if (grams <= 0) return;
+
+    const entry = {
+      id: uid(),
+      foodId: selectedFood.id,
+      grams: round1(grams),
+      time: new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
+      meal: selectedMeal,
+    };
+
+    setDays((prev) => ({
+      ...prev,
+      [selectedDate]: [...(prev[selectedDate] || []), entry],
+    }));
+
+    setAddCarbs('');
+  }
+
+  function updateEntryGrams(entryId, grams) {
+    setDays((prev) => ({
+      ...prev,
+      [selectedDate]: (prev[selectedDate] || []).map((e) =>
+        e.id === entryId ? { ...e, grams: Number(grams) || 0 } : e
+      ),
+    }));
+  }
+
+  function deleteEntry(entryId) {
+    setDays((prev) => ({
+      ...prev,
+      [selectedDate]: (prev[selectedDate] || []).filter((e) => e.id !== entryId),
+    }));
+  }
+
+  const swapOptions = useMemo(() => {
+    if (!swapEntry) return [];
+    const currentFood = foods.find((f) => f.id === swapEntry.foodId);
+    const targetCarbs = calcEntry(currentFood, swapEntry.grams).carbs;
+
+    return foods
+      .filter((f) => f.id !== swapEntry.foodId && f.carbs > 0)
+      .map((f) => {
+        const neededGrams = round1((targetCarbs / f.carbs) * 100);
+        return { ...f, neededGrams, macros: calcEntry(f, neededGrams) };
+      })
+      .sort((a, b) => a.neededGrams - b.neededGrams);
+  }, [swapEntry, foods]);
+
+  function applySwap(food) {
+    if (!swapEntry) return;
+
+    setDays((prev) => ({
+      ...prev,
+      [selectedDate]: (prev[selectedDate] || []).map((e) =>
+        e.id === swapEntry.id ? { ...e, foodId: food.id, grams: food.neededGrams } : e
+      ),
+    }));
+
+    setSwapEntry(null);
+  }
+
+  const monthLabel = new Date(`${calendarMonth}-01`).toLocaleDateString('it-IT', {
+    month: 'long',
+    year: 'numeric',
+  });
+
+  return (
+    <div className="min-h-screen bg-slate-100 p-4 text-slate-900">
+      <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-[380px_1fr_420px]">
+        <section className="rounded-2xl bg-white p-4 shadow">
+          <h1 className="text-2xl font-bold">🍝 Cosa mangio</h1>
+          <div className="mt-1 text-sm text-slate-500">Libreria ingredienti</div>
+
+          <input
+            className="mt-3 w-full rounded-xl border p-3"
+            placeholder="Cerca prodotto"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <input className="col-span-2 rounded-xl border p-2" placeholder="Nome" value={foodForm.name} onChange={(e) => setFoodForm({ ...foodForm, name: e.target.value })} />
+            <label className="text-sm font-semibold">
+              Carboidrati /100g
+              <input className="mt-1 w-full rounded-xl border p-2 font-normal" type="number" placeholder="es. 78" value={foodForm.carbs} onChange={(e) => setFoodForm({ ...foodForm, carbs: e.target.value })} />
+            </label>
+            <label className="text-sm font-semibold">
+              Proteine /100g
+              <input className="mt-1 w-full rounded-xl border p-2 font-normal" type="number" placeholder="es. 7" value={foodForm.protein} onChange={(e) => setFoodForm({ ...foodForm, protein: e.target.value })} />
+            </label>
+            <label className="text-sm font-semibold">
+              Grassi /100g
+              <input className="mt-1 w-full rounded-xl border p-2 font-normal" type="number" placeholder="es. 1" value={foodForm.fat} onChange={(e) => setFoodForm({ ...foodForm, fat: e.target.value })} />
+            </label>
+            <label className="text-sm font-semibold">
+              Kcal /100g
+              <input className="mt-1 w-full rounded-xl border p-2 font-normal" type="number" placeholder="es. 349" value={foodForm.kcal} onChange={(e) => setFoodForm({ ...foodForm, kcal: e.target.value })} />
+            </label>
+            <label className="col-span-2 text-sm font-semibold">
+              Tipo carboidrati
+              <select className="mt-1 w-full rounded-xl border p-2 font-normal" value={foodForm.carbSpeed} onChange={(e) => setFoodForm({ ...foodForm, carbSpeed: e.target.value })}>
+                {carbSpeedOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.icon} {opt.label}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button onClick={saveFood} className="rounded-xl bg-black p-3 font-semibold text-white">
+              {editingFoodId ? 'Salva modifica alimento' : '+ Aggiungi alimento'}
+            </button>
+            <button onClick={() => setShowRecipeCreator(true)} className="rounded-xl bg-amber-500 p-3 font-semibold text-white">
+              + Crea ricetta
+            </button>
+          </div>
+
+          <div className="mt-4 max-h-[520px] space-y-2 overflow-auto">
+            {filteredFoods.map((food) => (
+              <div key={food.id} className="rounded-xl border p-3">
+                <div className="flex justify-between gap-2">
+                  <div>
+                    <div className="font-bold">
+                      {food.name} {food.isRecipe && <span className="text-xs text-amber-600">RICETTA</span>}
+                      <span className={`ml-2 text-sm ${carbSpeedMeta(food.carbSpeed).color}`}>{carbSpeedMeta(food.carbSpeed).icon}</span>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Carboidrati: {food.carbs}g | Proteine: {food.protein}g | Grassi: {food.fat}g | Kcal: {food.kcal}
+                    </div>
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={() => food.isRecipe ? openRecipeEditor(food) : editFood(food)} className="rounded-lg bg-slate-200 px-2 py-1 text-sm">Edit</button>
+                    <button onClick={() => deleteFood(food.id)} className="rounded-lg bg-red-100 px-2 py-1 text-sm text-red-700">X</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl bg-white p-4 shadow">
+          <div className="flex items-center justify-between">
+            <div className="grid w-[320px] grid-cols-[44px_1fr_44px] items-center gap-2">
+              <button onClick={() => moveMonth(-1)} className="h-11 rounded-xl bg-slate-200 px-3 py-2 font-bold">←</button>
+              <h2 className="text-center text-2xl font-bold capitalize">{monthLabel}</h2>
+              <button onClick={() => moveMonth(1)} className="h-11 rounded-xl bg-slate-200 px-3 py-2 font-bold">→</button>
+            </div>
+            <button onClick={goToday} className="rounded-xl bg-slate-900 px-4 py-2 text-white">Oggi</button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-7 gap-2 text-center text-sm font-semibold text-slate-500">
+            {['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'].map((d) => <div key={d}>{d}</div>)}
+          </div>
+
+          <div className="mt-2 grid min-h-[512px] grid-cols-7 grid-rows-6 gap-2">
+            {monthDays.map((d, i) => {
+              if (!d) return <div key={i} className="min-h-[76px] rounded-2xl" />;
+              const count = (days[d.key] || []).length;
+              const active = selectedDate === d.key;
+              const isToday = todayKey() === d.key;
+              return (
+                <button
+                  key={d.key}
+                  onClick={() => setSelectedDate(d.key)}
+                  className={`min-h-[76px] rounded-2xl border p-2 text-left relative ${active ? 'bg-black text-white border-black' : isToday ? 'bg-blue-50 border-blue-500' : 'bg-slate-50'}`}
+                >
+                  <div className="font-bold flex items-center justify-between">
+                    <span>{d.day}</span>
+                    {isToday && !active && (
+                      <span className="text-[10px] bg-blue-500 text-white px-2 py-1 rounded-full">OGGI</span>
+                    )}
+                  </div>
+                  {count > 0 && <div className="mt-2 text-xs">{count} pasti</div>}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 grid grid-cols-4 gap-3">
+            <div className="rounded-xl bg-slate-100 p-3"><b>{total.carbs}g</b><br />Carbo</div>
+            <div className="rounded-xl bg-slate-100 p-3"><b>{total.protein}g</b><br />Proteine</div>
+            <div className="rounded-xl bg-slate-100 p-3"><b>{total.fat}g</b><br />Grassi</div>
+            <div className="rounded-xl bg-slate-100 p-3"><b>{total.kcal}</b><br />Kcal</div>
+          </div>
+
+          <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+            <h3 className="mb-3 text-lg font-bold">Obiettivo totale giornaliero</h3>
+            <div className="grid gap-2 md:grid-cols-2">
+              {[
+                ['Carboidrati', total.carbs, effectiveDailyTargets.carbs, 'g'],
+                ['Proteine', total.protein, effectiveDailyTargets.protein, 'g'],
+                ['Grassi', total.fat, effectiveDailyTargets.fat, 'g'],
+                ['Kcal', total.kcal, effectiveDailyTargets.kcal, 'kcal'],
+              ].map(([label, current, target, unit]) => {
+                const info = targetInfo(current, target);
+                return (
+                  <div key={label} className="rounded-xl bg-white p-3">
+                    <div className="flex justify-between text-sm font-semibold">
+                      <span>{label}</span>
+                      <span>{current}{unit === 'g' ? 'g' : ''} / {target || 0}{unit === 'g' ? 'g' : ' kcal'}</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                      <div className={`h-full ${info.done ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${info.percent}%` }} />
+                    </div>
+                    <div className={`mt-1 text-xs ${info.done ? 'text-green-700' : 'text-slate-500'}`}>
+                      {info.text}{target ? (unit === 'g' ? 'g' : ' kcal') : ''}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-2xl bg-slate-50 p-4">
+            <h3 className="mb-3 text-lg font-bold">Percentuale macro giornata</h3>
+            {pieData.length === 0 ? (
+              <div className="py-8 text-center text-slate-500">Aggiungi alimenti per vedere il grafico</div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-[180px_1fr]">
+                <div className="h-[180px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={pieData} dataKey="value" innerRadius={45} outerRadius={80} paddingAngle={2}>
+                        {pieData.map((entry) => (
+                          <Cell key={entry.name} fill={entry.color} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex flex-col justify-center gap-2">
+                  <div className="rounded-xl bg-white p-3"><b style={{ color: '#22c55e' }}>{macroPerc.carbs}%</b> Carboidrati</div>
+                  <div className="rounded-xl bg-white p-3"><b style={{ color: '#3b82f6' }}>{macroPerc.protein}%</b> Proteine</div>
+                  <div className="rounded-xl bg-white p-3"><b style={{ color: '#f97316' }}>{macroPerc.fat}%</b> Grassi</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-2xl bg-white p-4 shadow">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-2xl font-bold">Giornaliera</h2>
+            <button onClick={() => setShowMealTargets(true)} className="rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white">🎯 Obiettivi pasti</button>
+          </div>
+          <div className="mb-3 text-slate-500">{selectedDate}</div>
+
+          <div className="rounded-2xl border bg-slate-50 p-3">
+            <select className="mb-2 w-full rounded-xl border p-3" value={selectedMeal} onChange={(e) => setSelectedMeal(e.target.value)}>
+              {mealTypes.map((meal) => <option key={meal} value={meal}>{meal}</option>)}
+            </select>
+
+            <select className="w-full rounded-xl border p-3" value={selectedFoodId} onChange={(e) => setSelectedFoodId(e.target.value)}>
+              {foods.map((f) => {
+                const meta = carbSpeedMeta(f.carbSpeed);
+                return <option key={f.id} value={f.id}>{meta.icon} {f.name}{f.isRecipe ? ' (ricetta)' : ''}</option>;
+              })}
+            </select>
+
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <input className="rounded-xl border p-2" type="number" placeholder="Grammi" value={addGrams} onChange={(e) => setAddGrams(e.target.value)} />
+              <input className="rounded-xl border p-2" type="number" placeholder="Oppure carbo target" value={addCarbs} onChange={(e) => setAddCarbs(e.target.value)} />
+            </div>
+
+            <button onClick={addEntry} className="mt-2 w-full rounded-xl bg-green-600 p-3 font-semibold text-white">
+              Aggiungi alla giornata
+            </button>
+          </div>
+
+          <div className="mt-4 max-h-[520px] space-y-4 overflow-auto">
+            {entries.length === 0 && <div className="py-8 text-center text-slate-500">Nessun pasto in questo giorno</div>}
+
+            {mealTypes.map((meal) => {
+              const mealEntries = entries.filter((e) => (e.meal || 'Colazione') === meal);
+              const mealCarbs = round1(mealEntries.reduce((sum, e) => {
+                const food = foods.find((f) => f.id === e.foodId);
+                return sum + calcEntry(food, e.grams).carbs;
+              }, 0));
+              const target = Number(mealTargets[meal]) || 0;
+              const diff = round1(target - mealCarbs);
+
+              if (mealEntries.length === 0 && selectedMeal !== meal) return null;
+
+              return (
+                <div key={meal} className={`rounded-2xl border p-3 ${selectedMeal === meal ? 'border-green-500 bg-green-50' : 'bg-white'}`}>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="font-bold">{meal}</div>
+                    <div className="text-xs text-slate-600">
+                      Carbo: {mealCarbs}g{target > 0 ? ` / ${target}g (${diff >= 0 ? 'mancano ' + diff : 'superato ' + Math.abs(diff)}g)` : ''}
+                    </div>
+                  </div>
+
+                  {mealEntries.length === 0 && <div className="text-sm text-slate-500">Aggiungi qui il cibo selezionato sopra.</div>}
+
+                  <div className="space-y-3">
+                    {mealEntries.map((entry) => {
+                      const food = foods.find((f) => f.id === entry.foodId);
+                      const m = calcEntry(food, entry.grams);
+
+                      return (
+                        <div key={entry.id} className="rounded-2xl border bg-white p-3">
+                          <div className="flex justify-between gap-2">
+                            <div>
+                              <div className="font-bold">
+                                {entry.time} - {food?.name || 'Eliminato'} {food && <span className={`ml-1 ${carbSpeedMeta(food.carbSpeed).color}`}>{carbSpeedMeta(food.carbSpeed).icon}</span>}
+                              </div>
+                              <div className="text-sm text-slate-600">
+                                Carboidrati: {m.carbs}g | Proteine: {m.protein}g | Grassi: {m.fat}g | Kcal: {m.kcal}
+                              </div>
+                            </div>
+                            <button onClick={() => deleteEntry(entry.id)} className="rounded-lg bg-red-100 px-2 text-red-700">X</button>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                            <input className="rounded-xl border p-2" type="number" value={entry.grams} onChange={(e) => updateEntryGrams(entry.id, e.target.value)} />
+                            <div className="flex gap-2">
+                              {food?.isRecipe && (
+                                <button onClick={() => setRecipeViewEntry(entry)} className="rounded-xl bg-amber-500 px-3 text-white">Ricetta</button>
+                              )}
+                              <button onClick={() => setSwapEntry(entry)} className="rounded-xl bg-blue-600 px-4 text-white">Swap</button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+
+      {showRecipeCreator && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-xl font-bold">{editingRecipeId ? 'Modifica ricetta' : 'Crea ricetta'}</h3>
+              <button onClick={() => { setShowRecipeCreator(false); setEditingRecipeId(null); }} className="rounded-xl bg-slate-200 px-3 py-2">Chiudi</button>
+            </div>
+
+            <input className="mb-2 w-full rounded-xl border p-3" placeholder="Nome ricetta" value={recipeName} onChange={(e) => setRecipeName(e.target.value)} />
+            <select className="mb-3 w-full rounded-xl border p-3" value={recipeSpeed} onChange={(e) => setRecipeSpeed(e.target.value)}>
+              {carbSpeedOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.icon} {opt.label}</option>)}
+            </select>
+
+            <div className="space-y-2">
+              {recipeRows.map((row) => (
+                <div key={row.id} className="grid grid-cols-[1fr_90px_36px] gap-2">
+                  <select className="rounded-xl border p-2" value={row.foodId} onChange={(e) => setRecipeRows((prev) => prev.map((r) => r.id === row.id ? { ...r, foodId: Number(e.target.value) } : r))}>
+                    {foods.filter((f) => !f.isRecipe).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                  <input className="rounded-xl border p-2" type="number" placeholder="grammi" value={row.grams} onChange={(e) => setRecipeRows((prev) => prev.map((r) => r.id === row.id ? { ...r, grams: e.target.value } : r))} />
+                  <button className="rounded-xl bg-red-100 text-red-700" onClick={() => setRecipeRows((prev) => prev.filter((r) => r.id !== row.id))}>X</button>
+                </div>
+              ))}
+            </div>
+
+            <button className="mt-3 w-full rounded-xl bg-slate-200 p-3 font-semibold" onClick={() => setRecipeRows((prev) => [...prev, { id: uid(), foodId: foods.find((f) => !f.isRecipe)?.id || 1, grams: '' }])}>+ Aggiungi ingrediente</button>
+            <button className="mt-2 w-full rounded-xl bg-amber-500 p-3 font-semibold text-white" onClick={createRecipe}>{editingRecipeId ? 'Salva modifica ricetta' : 'Crea ricetta'}</button>
+          </div>
+        </div>
+      )}
+
+      {recipeViewEntry && (() => {
+        const food = foods.find((f) => f.id === recipeViewEntry.foodId);
+        const scaled = scaleRecipeIngredients(food, recipeViewEntry.grams);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-xl font-bold">Ingredienti ricetta</h3>
+                <button onClick={() => setRecipeViewEntry(null)} className="rounded-xl bg-slate-200 px-3 py-2">Chiudi</button>
+              </div>
+              <div className="mb-3 text-sm text-slate-500">Per {recipeViewEntry.grams}g di {food?.name}</div>
+              <div className="space-y-2">
+                {scaled.map((ing) => (
+                  <div key={`${ing.foodId}-${ing.name}`} className="rounded-xl border p-3">
+                    <b>{ing.name}</b>: {ing.scaledGrams}g
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showMealTargets && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-xl font-bold">Obiettivi</h3>
+              <button onClick={() => setShowMealTargets(false)} className="rounded-xl bg-slate-200 px-3 py-2">Chiudi</button>
+            </div>
+
+            <div className="mb-4 rounded-2xl bg-slate-50 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="font-bold">Totale giornaliero</div>
+                <label className="flex items-center gap-2 text-sm font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={dailyTargetAuto}
+                    onChange={(e) => setDailyTargetAuto(e.target.checked)}
+                  />
+                  Automatico
+                </label>
+              </div>
+              <div className="mb-2 text-xs text-slate-500">
+                Automatico = carboidrati dalla somma degli obiettivi dei pasti. Proteine, grassi e kcal vengono calcolati dalle percentuali sotto.
+              </div>
+              {dailyTargetAuto && (
+                <div className="mb-3 grid grid-cols-3 gap-2">
+                  <label className="text-sm font-semibold">% Carbo
+                    <input className="mt-1 w-full rounded-xl border p-2 font-normal" type="number" value={macroPercents.carbs} onChange={(e) => setMacroPercents((prev) => ({ ...prev, carbs: Number(e.target.value) || 0 }))} />
+                  </label>
+                  <label className="text-sm font-semibold">% Proteine
+                    <input className="mt-1 w-full rounded-xl border p-2 font-normal" type="number" value={macroPercents.protein} onChange={(e) => setMacroPercents((prev) => ({ ...prev, protein: Number(e.target.value) || 0 }))} />
+                  </label>
+                  <label className="text-sm font-semibold">% Grassi
+                    <input className="mt-1 w-full rounded-xl border p-2 font-normal" type="number" value={macroPercents.fat} onChange={(e) => setMacroPercents((prev) => ({ ...prev, fat: Number(e.target.value) || 0 }))} />
+                  </label>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-sm font-semibold">Carboidrati
+                  <input
+                    className="mt-1 w-full rounded-xl border p-2 font-normal disabled:bg-slate-200"
+                    type="number"
+                    disabled={dailyTargetAuto}
+                    value={dailyTargetAuto ? effectiveDailyTargets.carbs : dailyTargets.carbs || ''}
+                    onChange={(e) => setDailyTargets((prev) => ({ ...prev, carbs: Number(e.target.value) || 0 }))}
+                  />
+                </label>
+                <label className="text-sm font-semibold">Proteine
+                  <input className="mt-1 w-full rounded-xl border p-2 font-normal" type="number" value={dailyTargets.protein || ''} onChange={(e) => setDailyTargets((prev) => ({ ...prev, protein: Number(e.target.value) || 0 }))} />
+                </label>
+                <label className="text-sm font-semibold">Grassi
+                  <input className="mt-1 w-full rounded-xl border p-2 font-normal" type="number" value={dailyTargets.fat || ''} onChange={(e) => setDailyTargets((prev) => ({ ...prev, fat: Number(e.target.value) || 0 }))} />
+                </label>
+                <label className="text-sm font-semibold">Kcal
+                  <input className="mt-1 w-full rounded-xl border p-2 font-normal" type="number" value={dailyTargets.kcal || ''} onChange={(e) => setDailyTargets((prev) => ({ ...prev, kcal: Number(e.target.value) || 0 }))} />
+                </label>
+              </div>
+            </div>
+
+            <div className="mb-2 font-bold">Carboidrati per pasto</div>
+            <div className="space-y-2">
+              {mealTypes.map((meal) => (
+                <label key={meal} className="block text-sm font-semibold">
+                  {meal}
+                  <input
+                    className="mt-1 w-full rounded-xl border p-2 font-normal"
+                    type="number"
+                    placeholder="Carboidrati target"
+                    value={mealTargets[meal] || ''}
+                    onChange={(e) => setMealTargets((prev) => ({ ...prev, [meal]: Number(e.target.value) || 0 }))}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {swapEntry && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-2xl bg-white p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-xl font-bold">Sostituisci per stessi carboidrati</h3>
+              <button onClick={() => setSwapEntry(null)} className="rounded-xl bg-slate-200 px-3 py-2">Chiudi</button>
+            </div>
+
+            <div className="space-y-2">
+              {swapOptions.map((food) => (
+                <button key={food.id} onClick={() => applySwap(food)} className="w-full rounded-2xl border p-3 text-left hover:bg-slate-100">
+                  <div className="font-bold">{food.name} → {food.neededGrams}g</div>
+                  <div className="text-sm text-slate-500">
+                    Carboidrati: {food.macros.carbs}g | Proteine: {food.macros.protein}g | Grassi: {food.macros.fat}g | Kcal: {food.macros.kcal}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

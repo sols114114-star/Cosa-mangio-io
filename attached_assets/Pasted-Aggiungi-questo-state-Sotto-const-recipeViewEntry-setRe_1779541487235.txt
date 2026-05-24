@@ -1,0 +1,106 @@
+Aggiungi questo state
+
+Sotto:
+
+const [recipeViewEntry, setRecipeViewEntry] = useState(null);
+
+aggiungi:
+
+const [storageLoaded, setStorageLoaded] = useState(false);
+2) Nel primo useEffect di caricamento
+
+Trova questo pezzo:
+
+try {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+  ...
+} catch {}
+
+e subito DOPO catch {} aggiungi:
+
+setStorageLoaded(true);
+
+Diventa così:
+
+try {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+  if (saved?.foods) setFoods(saved.foods);
+  if (saved?.days) setDays(saved.days);
+  if (saved?.selectedDate) setSelectedDate(saved.selectedDate);
+  if (saved?.calendarMonth) setCalendarMonth(saved.calendarMonth);
+  if (saved?.mealTargets) setMealTargets({ ...defaultMealTargets, ...saved.mealTargets });
+  if (saved?.dailyTargets) setDailyTargets({ ...defaultDailyTargets, ...saved.dailyTargets });
+  if (typeof saved?.dailyTargetAuto === 'boolean') setDailyTargetAuto(saved.dailyTargetAuto);
+  if (saved?.macroPercents) setMacroPercents({ ...defaultMacroPercents, ...saved.macroPercents });
+} catch {}
+
+setStorageLoaded(true);
+3) Nel useEffect che salva
+
+Trova:
+
+useEffect(() => {
+  const dataToSave = { foods, days, selectedDate, calendarMonth, mealTargets, dailyTargets, dailyTargetAuto, macroPercents };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+}, [foods, days, selectedDate, calendarMonth, mealTargets, dailyTargets, dailyTargetAuto, macroPercents]);
+
+sostituisci con:
+
+useEffect(() => {
+  if (!storageLoaded) return;
+
+  const dataToSave = {
+    foods,
+    days,
+    selectedDate,
+    calendarMonth,
+    mealTargets,
+    dailyTargets,
+    dailyTargetAuto,
+    macroPercents,
+  };
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+}, [
+  storageLoaded,
+  foods,
+  days,
+  selectedDate,
+  calendarMonth,
+  mealTargets,
+  dailyTargets,
+  dailyTargetAuto,
+  macroPercents,
+]);
+4) Nel secondo useEffect con saveNow
+
+Dentro saveNow, prima di salvare aggiungi:
+
+if (!storageLoaded) return;
+
+E nelle dipendenze aggiungi storageLoaded.
+
+Così:
+
+const saveNow = () => {
+  if (!storageLoaded) return;
+
+  const dataToSave = {
+    foods,
+    days,
+    selectedDate,
+    calendarMonth,
+    mealTargets,
+    dailyTargets,
+    dailyTargetAuto,
+    macroPercents,
+  };
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+};
+
+E alla fine:
+
+}, [storageLoaded, foods, days, selectedDate, calendarMonth, mealTargets, dailyTargets, dailyTargetAuto, macroPercents]);
+
+Q

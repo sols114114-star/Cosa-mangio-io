@@ -1,0 +1,116 @@
+1) Sostituisci portionLevel
+function portionLevel(portions) {
+  if (portions >= 10) return { label: 'rosso', bg: 'bg-red-200', text: 'text-red-900', color: '#ef4444' };
+  if (portions >= 7) return { label: 'arancio', bg: 'bg-orange-200', text: 'text-orange-900', color: '#f97316' };
+  if (portions >= 4) return { label: 'verde', bg: 'bg-green-200', text: 'text-green-900', color: '#22c55e' };
+  return { label: 'bianco', bg: 'bg-white', text: 'text-slate-700', color: '#ffffff' };
+}
+2) Sostituisci tutta recipeCircleStyle(recipe)
+function recipeCircleStyle(recipe) {
+  if (!recipe?.isRecipe || !Array.isArray(recipe.ingredients)) return {};
+
+  const totalRecipeWeight =
+    recipe.recipeTotalWeight ||
+    recipe.ingredients.reduce((s, i) => s + (Number(i.grams) || 0), 0) ||
+    1;
+
+  const parts = [];
+
+  recipe.ingredients.forEach((ing) => {
+    const grams = Number(ing.grams) || 0;
+    const share = Math.max(0, Math.min(100, (grams / totalRecipeWeight) * 100));
+    const usage = weeklyIngredientUsage[ing.foodId];
+    const color = usage?.level?.color || '#ffffff';
+
+    if (share > 0) parts.push({ share, color });
+  });
+
+  let start = 0;
+  const segs = parts.map((p) => {
+    const end = start + p.share;
+    const s = `${p.color} ${start}% ${end}%`;
+    start = end;
+    return s;
+  });
+
+  if (start < 100) segs.push(`#ffffff ${start}% 100%`);
+
+  return {
+    background: `conic-gradient(${segs.join(', ')})`,
+    boxShadow: '0 0 0 2px white, 0 0 0 3px #334155',
+  };
+}
+3) Aggiungi sotto recipeCircleStyle
+function recipeWarningText(recipe) {
+  if (!recipe?.isRecipe || !Array.isArray(recipe.ingredients)) return '';
+
+  const risky = recipe.ingredients
+    .map((ing) => {
+      const usage = weeklyIngredientUsage[ing.foodId];
+      if (!usage || usage.portions < 4) return null;
+      return `${ing.name}: ${usage.portions} porz.`;
+    })
+    .filter(Boolean);
+
+  return risky.length ? risky.join(' · ') : '';
+}
+4) Rendi pallina più grande dove già la mostri
+
+Trova:
+
+className="ml-2 inline-block h-5 w-5 rounded-full border border-slate-400 align-middle"
+
+Sostituisci con:
+
+className="ml-2 inline-block h-7 w-7 rounded-full border-2 border-slate-700 align-middle"
+5) Dopo il select dove scegli cibo giornaliero aggiungi preview
+
+Subito dopo:
+
+</select>
+
+quello della scelta alimento, aggiungi:
+
+{selectedFood && selectedFood.isRecipe && (
+  <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-50 p-2 text-sm">
+    <span
+      className="inline-block h-7 w-7 rounded-full border-2 border-slate-700"
+      style={recipeCircleStyle(selectedFood)}
+    />
+    <span>
+      Stato ricetta settimana
+      {recipeWarningText(selectedFood) && (
+        <span className="block text-xs text-orange-700">
+          {recipeWarningText(selectedFood)}
+        </span>
+      )}
+    </span>
+  </div>
+)}
+6) Aggiungi avviso sotto grafico macro
+
+Dopo il blocco “Percentuale macro giornata”, aggiungi:
+
+<div className="mt-4 rounded-2xl bg-white p-3">
+  <div className="font-bold">Controllo varietà settimana</div>
+  {foods
+    .filter((food) => !food.isRecipe && (weeklyIngredientUsage[food.id]?.portions || 0) >= 7)
+    .length === 0 ? (
+      <div className="mt-1 text-sm text-slate-500">
+        Nessun alimento troppo ripetuto questa settimana.
+      </div>
+    ) : (
+      <div className="mt-2 space-y-1 text-sm">
+        {foods
+          .filter((food) => !food.isRecipe && (weeklyIngredientUsage[food.id]?.portions || 0) >= 7)
+          .map((food) => {
+            const usage = weeklyIngredientUsage[food.id];
+            return (
+              <div key={food.id} className={`${usage.level.text}`}>
+                Questa settimana hai usato molto: <b>{food.name}</b> ({usage.portions} porz.)
+              </div>
+            );
+          })}
+      </div>
+    )}
+</div>
